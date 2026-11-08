@@ -1,0 +1,67 @@
+# Test server on one EC2 instance: detection API + OpenTelemetry collector + Caddy (TLS).
+# Secrets come from AWS Secrets Manager through the instance profile role; no
+# secret files, no IAM user keys. Full steps: docs/detection-api.md, section 4.
+#
+#   cd ai-governance-local
+#   cp deploy/aws/test-server.env.example deploy/aws/test-server.env   # then edit it
+#   docker compose -f deploy/aws/docker-compose.test-server.yml --env-file deploy/aws/test-server.env up -d --build
+services:
+  detection-api:
+    build:
+      context: ../../detection_api
+      args:
+        NLP_MODEL: ${GOV_NLP_MODEL:-en_core_web_lg}
+    image: ai-governance/detection-api:${GOV_IMAGE_TAG:-test}
+    user: "${GOV_UID:-10001}:${GOV_GID:-10001}"
+    environment:
+      GOV_ENVIRONMENT: ${GOV_ENVIRONMENT:-test}
+      # Both secrets are read from this one Secrets Manager secret at start-up.
+      GOV_AWS_SECRET_ID: ${GOV_AWS_SECRET_ID:?set GOV_AWS_SECRET_ID in test-server.env}
+      GOV_AWS_REGION: ${GOV_AWS_REGION:-ap-south-1}
+      GOV_AUTH_MODE: ${GOV_AUTH_MODE:-token}
+      GOV_OIDC_ISSUER: ${GOV_OIDC_ISSUER:-}
+      GOV_OIDC_AUDIENCE: ${GOV_OIDC_AUDIENCE:-}
+      GOV_OIDC_JWKS_URL: ${GOV_OIDC_JWKS_URL:-}
+      GOV_IDENTITY_MISMATCH: ${GOV_IDENTITY_MISMATCH:-log}
+      GOV_NLP_MODEL: ${GOV_NLP_MODEL:-en_core_web_lg}
+      GOV_WORKERS: ${GOV_WORKERS:-2}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: ai-governance-detection
+      GOV_AUDIT_FILE: /logs/governance-decisions.jsonl
+      GOV_RECOGNIZERS_PATH: /app/rules/recognizers.json
+      GOV_RULES_ARCHIVE_DIR: /logs/rules-archive
+    # Not published on the host: only Caddy (TLS) is reachable from outside.
+    expose:
+      - "8088"
+    volumes:
+      - ../../detection_api/policy.yaml:/app/policy.yaml:ro
+      - ../../detection_api/rules:/app/rules:ro
+      - ${GOV_EVENT_LOG_DIR:-../../logs}:/logs
+    depends_on:
+      - otel-collector
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:${OTEL_COLLECTOR_TAG:-latest}
+    command: ["--config=/etc/otelcol/config.yaml"]
+    user: "${GOV_UID:-10001}:${GOV_GID:-10001}"
+    volumes:
+      - ../../otel-collector.yaml:/etc/otelcol/config.yaml:ro
+      - ${GOV_EVENT_LOG_DIR:-../../logs}:/logs
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:${CADDY_TAG:-2}
+    ports:
+      - "443:443"
+    environment:
+      GOV_SITE_ADDRESS: ${GOV_SITE_ADDRESS:?set GOV_SITE_ADDRESS in test-server.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - detection-api
+    restart: unless-stopped
+
+volumes:
+  caddy-data:

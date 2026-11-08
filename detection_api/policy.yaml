@@ -1,0 +1,93 @@
+# AI coding-assistant governance policy
+#
+# Actions, most severe first:
+#   block         - stop the prompt / tool call
+#   warn          - prompts: block unless the user adds "#justify: <reason>";
+#                   tool channels: allow and log as warn_allow
+#   pseudonymize  - replace with a stable token, e.g. <IN_PAN:3f9a1c2e>
+#   mask          - replace with the entity type, e.g. <IN_MOBILE>
+#   allow         - pass (still logged if found)
+#
+# Kiro cannot rewrite content in flight, so on Kiro mask/pseudonymize are
+# enforced as "block + point the agent at a sanitized copy" (see README).
+#
+# The file is re-read automatically when it changes; no restart needed.
+
+version: 1
+
+# Presidio confidence below which a finding is ignored, unless an entity sets its own.
+score_threshold: 0.5
+
+# Action for any entity found that is not listed below.
+default_action: allow
+
+entities:
+  # --- Hard blocks: regulated or catastrophic if leaked ---
+  CREDIT_CARD:            { action: block }
+  IN_AADHAAR:             { action: block }
+  IBAN_CODE:              { action: block }
+  SECRET:                 { action: block }
+  PRIVATE_KEY:            { action: block }
+  CONNECTION_STRING:      { action: block }
+  CLASSIFICATION_MARKER:  { action: block }
+
+  # --- Identity documents: pseudonymize (stable token per value) ---
+  IN_PAN:                 { action: pseudonymize }
+  IN_VOTER:               { action: pseudonymize }
+  IN_PASSPORT:            { action: pseudonymize }
+
+  # --- Financial and contact identifiers: mask ---
+  IN_BANK_ACCOUNT:        { action: mask }
+  IN_IFSC:                { action: mask }
+  IN_UPI_ID:              { action: mask }
+  IN_MOBILE:              { action: mask }
+  PHONE_NUMBER:           { action: mask, min_score: 0.6 }
+
+  # --- Lower-risk or noisy: require justification ---
+  IN_GSTIN:               { action: warn }
+  CERTIFICATE:            { action: warn }
+  EMAIL_ADDRESS:          { action: warn }
+  # NER on source code is noisy, so PERSON needs a high score and is only
+  # enforced on prompts and attachments, not on code the agent reads.
+  PERSON:                 { action: warn, min_score: 0.85, channels: [prompt, attachment] }
+
+# Action for files the service cannot extract text from (e.g. unknown binaries).
+unscannable_action: warn
+
+# Entities Presidio should not even run for (saves latency, avoids noise in code).
+disabled_entities:
+  - DATE_TIME
+  - NRP
+  - LOCATION
+  - ORGANIZATION
+  - URL
+  - US_DRIVER_LICENSE
+  - US_BANK_NUMBER
+  - IN_VEHICLE_REGISTRATION
+
+# File paths that are blocked outright, before any content scan.
+path_rules:
+  block_globs:
+    - "**/.env"
+    - "**/.env.*"
+    - "**/*.pem"
+    - "**/*.key"
+    - "**/*.p12"
+    - "**/*.pfx"
+    - "**/id_rsa*"
+    - "**/id_ed25519*"
+    - "**/customer-data/**"
+    - "**/pii/**"
+  allow_globs:
+    - "**/.env.example"
+
+# Per-user overrides. Each must carry an approver, a reason and an expiry.
+# Expired overrides are ignored automatically. Every use is logged with
+# policy_source = user_override so the SIEM can alert on it.
+user_overrides:
+  - user: "test.analyst@example.com"
+    entity: PERSON
+    action: allow
+    reason: "Works only with synthetic customer names in the test-data repo"
+    approved_by: "ciso@example.com"
+    expires: "2026-12-31"

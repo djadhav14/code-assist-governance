@@ -1,0 +1,13 @@
+# TLS in front of the detection API on the test server.
+# GOV_SITE_ADDRESS is the name developers' hooks use, e.g. governance-test.corp.internal
+{
+	# Private name, no public DNS: Caddy issues the certificate from its own
+	# local CA. Copy that CA to developer laptops and point GOV_CA_BUNDLE at it
+	# (docs/detection-api.md, section 4.5). Remove this line for a public DNS
+	# name; Caddy then gets a publicly trusted certificate automatically.
+	local_certs
+}
+
+{$GOV_SITE_ADDRESS} {
+	reverse_proxy detection-api:8088
+}

@@ -1,0 +1,148 @@
+<!--
+  AI governance rules for Wazuh 4.x (tested against wazuh-docker v4.14.10 file layout).
+  Input: one JSON object per line from the governance server's audit file
+         (GOV_AUDIT_FILE), all fields under "governance", e.g.
+         {"governance":{"event":"governance.decision","decision":"block","data_classes":"IN_AADHAAR",...}}
+  Rule IDs 100100-100199; 100150-100152 are detection-rules changes (Wazuh's custom range starts at 100000).
+
+  Levels: 2 = recorded, not alerted (Wazuh alerts from level 3 by default)
+          5-7 = notable, 10 = high, 12 = critical.
+  Each decision maps to exactly one rule: per-user overrides are matched first,
+  and the decision rules exclude them.
+-->
+<group name="ai_governance,">
+
+  <!-- Every governance decision. Allowed requests stay at level 2 (no alert). -->
+  <rule id="100100" level="2">
+    <decoded_as>json</decoded_as>
+    <field name="governance.event">^governance.decision$</field>
+    <description>AI governance: $(governance.decision) for $(governance.user_id) ($(governance.agent), $(governance.channel))</description>
+  </rule>
+
+  <!-- A per-user policy override was used: alert regardless of outcome. -->
+  <rule id="100101" level="10">
+    <if_sid>100100</if_sid>
+    <field name="governance.policy_sources" type="pcre2">user_override</field>
+    <description>AI governance: per-user override used by $(governance.user_id) for $(governance.data_classes)</description>
+    <group>ai_governance_override,</group>
+  </rule>
+
+  <!-- Prompt held back until the user gives a justification. -->
+  <rule id="100110" level="5">
+    <if_sid>100100</if_sid>
+    <field name="governance.decision">^warn$</field>
+    <field name="governance.policy_sources" type="pcre2" negate="yes">user_override</field>
+    <description>AI governance: $(governance.user_id) asked to justify sending $(governance.data_classes)</description>
+    <group>ai_governance_warn,</group>
+  </rule>
+
+  <!-- Sent after a justification, or allowed-and-logged in a file or tool output. -->
+  <rule id="100111" level="6">
+    <if_sid>100100</if_sid>
+    <field name="governance.decision">^warn_allow$</field>
+    <field name="governance.policy_sources" type="pcre2" negate="yes">user_override</field>
+    <description>AI governance: $(governance.data_classes) sent to AI by $(governance.user_id) (justified or logged)</description>
+    <group>ai_governance_warn,</group>
+  </rule>
+
+  <!-- Value masked or pseudonymized before reaching the AI. -->
+  <rule id="100120" level="7">
+    <if_sid>100100</if_sid>
+    <field name="governance.decision" type="pcre2">^(mask|pseudonymize)$</field>
+    <field name="governance.policy_sources" type="pcre2" negate="yes">user_override</field>
+    <description>AI governance: $(governance.data_classes) $(governance.decision)d for $(governance.user_id) ($(governance.channel))</description>
+    <group>ai_governance_redact,</group>
+  </rule>
+
+  <!-- Blocked. -->
+  <rule id="100130" level="10">
+    <if_sid>100100</if_sid>
+    <field name="governance.decision">^block$</field>
+    <field name="governance.policy_sources" type="pcre2" negate="yes">user_override</field>
+    <description>AI governance: blocked $(governance.data_classes) from $(governance.user_id) ($(governance.channel))</description>
+    <group>ai_governance_block,</group>
+  </rule>
+
+  <!-- Blocked: payment card data (PCI DSS cardholder data). -->
+  <rule id="100131" level="12">
+    <if_sid>100130</if_sid>
+    <field name="governance.data_classes" type="pcre2">\bCREDIT_CARD\b</field>
+    <description>AI governance: payment card number blocked from $(governance.user_id)</description>
+    <group>ai_governance_block,ai_governance_critical,pci_dss_3.4,</group>
+  </rule>
+
+  <!-- Blocked: Aadhaar, IBAN, secrets, keys, connection strings. -->
+  <rule id="100132" level="12">
+    <if_sid>100130</if_sid>
+    <field name="governance.data_classes" type="pcre2">\b(IN_AADHAAR|IBAN_CODE|SECRET|PRIVATE_KEY|CONNECTION_STRING)\b</field>
+    <description>AI governance: critical data ($(governance.data_classes)) blocked from $(governance.user_id)</description>
+    <group>ai_governance_block,ai_governance_critical,</group>
+  </rule>
+
+  <!-- Blocked by a file path rule (.env, keys, customer-data/ ...). -->
+  <rule id="100133" level="10">
+    <if_sid>100130</if_sid>
+    <field name="governance.path_rule" type="pcre2">.+</field>
+    <description>AI governance: agent read of restricted file $(governance.file_path) blocked for $(governance.user_id)</description>
+    <group>ai_governance_block,</group>
+  </rule>
+
+  <!-- Repeated blocks for the same user: possible deliberate attempts. -->
+  <rule id="100140" level="12" frequency="5" timeframe="3600" ignore="600">
+    <if_matched_group>ai_governance_block</if_matched_group>
+    <same_field>governance.user_id</same_field>
+    <description>AI governance: repeated blocked attempts by $(governance.user_id) within an hour</description>
+    <group>ai_governance_block,ai_governance_repeat,</group>
+  </rule>
+
+  <!-- Detection rules file (detection_api/rules/recognizers.json) changed.
+       Every server worker logs its own load; ignore="30" keeps it to one alert. -->
+  <rule id="100150" level="5" ignore="30">
+    <decoded_as>json</decoded_as>
+    <field name="governance.event">^governance.rules_loaded$</field>
+    <description>AI governance: detection rules $(governance.rules_version) in force (was $(governance.rules_previous_version)), by $(governance.rules_updated_by): $(governance.rules_change_note)</description>
+    <group>ai_governance_rules,</group>
+  </rule>
+
+  <!-- A recognizer was removed: detection may have been weakened. -->
+  <rule id="100152" level="8">
+    <if_sid>100150</if_sid>
+    <field name="governance.rules_removed" type="pcre2">.+</field>
+    <description>AI governance: detection rules $(governance.rules_version) removed recognizer(s) $(governance.rules_removed)</description>
+    <group>ai_governance_rules,</group>
+  </rule>
+
+  <!-- A new rules file was refused; the previous version stays in force. -->
+  <rule id="100151" level="10" ignore="30">
+    <decoded_as>json</decoded_as>
+    <field name="governance.event">^governance.rules_rejected$</field>
+    <description>AI governance: detection rules file rejected, $(governance.rules_in_force_version) stays in force: $(governance.rules_problems)</description>
+    <group>ai_governance_rules,</group>
+  </rule>
+
+  <!-- Verified identity (GOV_AUTH_MODE=token+oidc / oidc): the desktop user name
+       doesn't belong to the signed-in account. Logged and allowed (GOV_IDENTITY_MISMATCH=log). -->
+  <rule id="100160" level="8">
+    <if_sid>100100</if_sid>
+    <field name="governance.identity_mismatch">^true$</field>
+    <description>AI governance: desktop user $(governance.user_claimed) used signed-in account $(governance.user_id) on $(governance.host_name)</description>
+    <group>ai_governance_identity,</group>
+  </rule>
+
+  <!-- The same, refused (GOV_IDENTITY_MISMATCH=block). -->
+  <rule id="100161" level="10">
+    <decoded_as>json</decoded_as>
+    <field name="governance.event">^governance.identity_mismatch$</field>
+    <description>AI governance: blocked, desktop user $(governance.user_claimed) does not match signed-in account $(governance.user_id)</description>
+    <group>ai_governance_identity,</group>
+  </rule>
+
+  <!-- A policy.yaml edit was refused; the previous policy stays in force. -->
+  <rule id="100153" level="10" ignore="30">
+    <decoded_as>json</decoded_as>
+    <field name="governance.event">^governance.policy_rejected$</field>
+    <description>AI governance: policy.yaml rejected, version $(governance.policy_in_force_version) stays in force: $(governance.policy_problem)</description>
+    <group>ai_governance_rules,</group>
+  </rule>
+
+</group>

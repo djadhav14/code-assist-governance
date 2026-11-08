@@ -1,0 +1,58 @@
+# Configuration comes from .env (non-secret settings) and ./secrets/ (secret values).
+# Create both with:  python scripts/init_secrets.py
+services:
+  detection-api:
+    build:
+      context: ./detection_api
+      args:
+        NLP_MODEL: ${GOV_NLP_MODEL:-en_core_web_lg}
+    image: ai-governance/detection-api:${GOV_IMAGE_TAG:-local}
+    # Runs as your host user so it can write the audit file into ./logs
+    # (init_secrets.py sets GOV_UID/GOV_GID; 10001 is the image's own user).
+    user: "${GOV_UID:-10001}:${GOV_GID:-10001}"
+    env_file: .env
+    environment:
+      # Secrets are mounted as files, not passed as environment variables,
+      # so they do not appear in `docker inspect` or process listings.
+      GOV_API_TOKEN_FILE: /run/secrets/gov_api_token
+      GOV_HASH_KEY_FILE: /run/secrets/gov_hash_key
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      # Flat JSON audit file for Wazuh (siem/wazuh/): ./logs/governance-decisions.jsonl on the host.
+      GOV_AUDIT_FILE: /logs/governance-decisions.jsonl
+      # Detection rules, and a copy of every version the server accepted
+      # (./logs/rules-archive on the host). See docs/detection-rules.md.
+      GOV_RECOGNIZERS_PATH: /app/rules/recognizers.json
+      GOV_RULES_ARCHIVE_DIR: /logs/rules-archive
+    secrets:
+      - gov_api_token
+      - gov_hash_key
+    ports:
+      # Bound to localhost by default; set GOV_BIND_ADDRESS to expose it on the network.
+      - "${GOV_BIND_ADDRESS:-127.0.0.1}:${GOV_PUBLISH_PORT:-8088}:${GOV_PORT:-8088}"
+    volumes:
+      # Edit the policy on the host; the API reloads it on change.
+      - ${GOV_POLICY_FILE:-./detection_api/policy.yaml}:/app/policy.yaml:ro
+      # Detection rules (recognizers.json). A folder, not a single file, so edits
+      # are seen even from editors that save by replacing the file.
+      - ${GOV_RULES_DIR:-./detection_api/rules}:/app/rules:ro
+      - ${GOV_EVENT_LOG_DIR:-./logs}:/logs
+    depends_on:
+      - otel-collector
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:${OTEL_COLLECTOR_TAG:-latest}
+    command: ["--config=/etc/otelcol/config.yaml"]
+    # Run as your host user so the collector can write into the bind-mounted ./logs
+    # (init_secrets.py sets GOV_UID/GOV_GID in .env; 10001 is the image's default user).
+    user: "${GOV_UID:-10001}:${GOV_GID:-10001}"
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
+      - ${GOV_EVENT_LOG_DIR:-./logs}:/logs
+    restart: unless-stopped
+
+secrets:
+  gov_api_token:
+    file: ${GOV_SECRETS_DIR:-./secrets}/gov_api_token
+  gov_hash_key:
+    file: ${GOV_SECRETS_DIR:-./secrets}/gov_hash_key

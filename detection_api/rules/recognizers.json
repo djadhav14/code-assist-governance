@@ -1,0 +1,336 @@
+{
+  "schema_version": 1,
+  "version": "2026.11.08.1",
+  "updated_at": "2026-11-08",
+  "updated_by": "ai-governance 0.7.0 export",
+  "change_note": "Initial version: the custom recognizers previously hard-coded in recognizers.py (0.6.3), unchanged.",
+  "defaults": {
+    "language": "en",
+    "regex_flags": [
+      "IGNORECASE",
+      "MULTILINE",
+      "DOTALL"
+    ]
+  },
+  "recognizers": [
+    {
+      "name": "InBankAccountRecognizer",
+      "entity": "IN_BANK_ACCOUNT",
+      "group": "india",
+      "enabled": true,
+      "description": "Indian bank account numbers (9-18 digits). Low base score; raised by nearby context words.",
+      "patterns": [
+        {
+          "name": "in_bank_account",
+          "regex": "(?<![\\d-])\\d{9,18}(?![\\d-])",
+          "score": 0.25
+        }
+      ],
+      "context": [
+        "account",
+        "a/c",
+        "acct",
+        "acc no",
+        "account number",
+        "bank",
+        "savings",
+        "current account",
+        "beneficiary",
+        "neft",
+        "rtgs",
+        "imps"
+      ],
+      "tests": {
+        "match": [
+          "Disburse to savings account number 50100123456788"
+        ],
+        "no_match": [
+          "Pin code 560001",
+          "Order 12345678"
+        ]
+      }
+    },
+    {
+      "name": "InIfscRecognizer",
+      "entity": "IN_IFSC",
+      "group": "india",
+      "enabled": true,
+      "description": "IFSC branch codes: 4 letters, 0, 6 alphanumerics.",
+      "patterns": [
+        {
+          "name": "in_ifsc",
+          "regex": "\\b[A-Z]{4}0[A-Z0-9]{6}\\b",
+          "score": 0.6
+        }
+      ],
+      "context": [
+        "ifsc",
+        "branch",
+        "bank",
+        "neft",
+        "rtgs"
+      ],
+      "tests": {
+        "match": [
+          "Send NEFT to IFSC HDFC0001234 today."
+        ],
+        "no_match": [
+          "Code HDFC1001234"
+        ]
+      }
+    },
+    {
+      "name": "InUpiRecognizer",
+      "entity": "IN_UPI_ID",
+      "group": "india",
+      "enabled": true,
+      "description": "UPI IDs (handle@psp). The PSP part has no dot, which separates it from email addresses.",
+      "patterns": [
+        {
+          "name": "in_upi",
+          "regex": "(?<![\\w.@-])[a-zA-Z0-9][\\w.\\-]{1,255}@[a-zA-Z]{2,64}(?![\\w.@-])",
+          "score": 0.55
+        }
+      ],
+      "context": [
+        "upi",
+        "vpa",
+        "gpay",
+        "phonepe",
+        "paytm",
+        "bhim",
+        "pay to"
+      ],
+      "tests": {
+        "match": [
+          "Collect EMI via UPI ID rahul.sharma@okhdfcbank"
+        ],
+        "no_match": [
+          "Email priya.k@example.com"
+        ]
+      }
+    },
+    {
+      "name": "InMobileRecognizer",
+      "entity": "IN_MOBILE",
+      "group": "india",
+      "enabled": true,
+      "description": "Indian mobile numbers, with or without +91/0091.",
+      "patterns": [
+        {
+          "name": "in_mobile_prefixed",
+          "regex": "(?<![\\d+])(?:\\+91|0091)[\\s-]?[6-9]\\d{4}[\\s-]?\\d{5}(?!\\d)",
+          "score": 0.75
+        },
+        {
+          "name": "in_mobile_bare",
+          "regex": "(?<![\\d+])[6-9]\\d{9}(?!\\d)",
+          "score": 0.35
+        }
+      ],
+      "context": [
+        "mobile",
+        "phone",
+        "contact",
+        "whatsapp",
+        "cell",
+        "mob",
+        "tel"
+      ],
+      "tests": {
+        "match": [
+          "Borrower mobile: +91 98765 43210",
+          "Call 9876543210"
+        ],
+        "no_match": [
+          "Call 5876543210",
+          "Ext 12345"
+        ]
+      }
+    },
+    {
+      "name": "SecretTokenRecognizer",
+      "entity": "SECRET",
+      "group": "secrets",
+      "enabled": true,
+      "description": "Cloud and API keys, tokens and assigned passwords.",
+      "patterns": [
+        {
+          "name": "aws_access_key",
+          "regex": "\\b(?:AKIA|ASIA)[0-9A-Z]{16}\\b",
+          "score": 0.9
+        },
+        {
+          "name": "github_token",
+          "regex": "\\bgh[pousr]_[A-Za-z0-9]{36,255}\\b",
+          "score": 0.95
+        },
+        {
+          "name": "github_pat",
+          "regex": "\\bgithub_pat_[A-Za-z0-9_]{60,}\\b",
+          "score": 0.95
+        },
+        {
+          "name": "anthropic_key",
+          "regex": "\\bsk-ant-[A-Za-z0-9_\\-]{20,}",
+          "score": 0.95
+        },
+        {
+          "name": "openai_key",
+          "regex": "\\bsk-(?:proj-)?[A-Za-z0-9_\\-]{32,}",
+          "score": 0.8
+        },
+        {
+          "name": "slack_token",
+          "regex": "\\bxox[abprs]-[A-Za-z0-9-]{10,}",
+          "score": 0.9
+        },
+        {
+          "name": "google_api_key",
+          "regex": "\\bAIza[0-9A-Za-z_\\-]{35}\\b",
+          "score": 0.9
+        },
+        {
+          "name": "stripe_key",
+          "regex": "\\b(?:sk|rk)_live_[0-9a-zA-Z]{20,}\\b",
+          "score": 0.95
+        },
+        {
+          "name": "azure_storage_key",
+          "regex": "AccountKey=[A-Za-z0-9+/=]{40,}",
+          "score": 0.9
+        },
+        {
+          "name": "jwt",
+          "regex": "\\beyJ[A-Za-z0-9_\\-]{10,}\\.eyJ[A-Za-z0-9_\\-]{10,}\\.[A-Za-z0-9_\\-]{10,}",
+          "score": 0.85
+        },
+        {
+          "name": "assigned_secret",
+          "regex": "(?i)\\b(?:password|passwd|pwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret)\\b[\\\"']?\\s*[:=]\\s*[\\\"']?[^\\s\\\"'`,;]{6,}",
+          "score": 0.7
+        }
+      ],
+      "context": [],
+      "tests": {
+        "match": [
+          "aws_access_key_id = AKIAIOSFODNN7EXAMPLE",
+          "password = S3cretPass1",
+          "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+          "token ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+          "github_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+          "key sk-ant-EXAMPLExxxxxxxxxxxxxxxxxxxx",
+          "OPENAI_KEY sk-proj-EXAMPLE0EXAMPLE0EXAMPLE0EXAMPLE0",
+          "xoxb-0000000000-EXAMPLE",
+          "AIzaEXAMPLE0EXAMPLE0EXAMPLE0EXAMPLE0XYZ",
+          "sk_live_EXAMPLE0EXAMPLE0EXAMPLE0",
+          "AccountKey=EXAMPLE0EXAMPLE0EXAMPLE0EXAMPLE0EXAMPLE0EXAMPLE0=="
+        ],
+        "no_match": [
+          "The password field is required",
+          "Rotate the AWS keys monthly"
+        ]
+      }
+    },
+    {
+      "name": "PrivateKeyRecognizer",
+      "entity": "PRIVATE_KEY",
+      "group": "secrets",
+      "enabled": true,
+      "description": "PEM private key headers.",
+      "patterns": [
+        {
+          "name": "pem_private_key",
+          "regex": "-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY(?: BLOCK)?-----",
+          "score": 1.0
+        }
+      ],
+      "context": [],
+      "tests": {
+        "match": [
+          "-----BEGIN RSA PRIVATE KEY-----",
+          "-----BEGIN OPENSSH PRIVATE KEY-----"
+        ],
+        "no_match": [
+          "-----BEGIN PUBLIC KEY-----"
+        ]
+      }
+    },
+    {
+      "name": "CertificateRecognizer",
+      "entity": "CERTIFICATE",
+      "group": "secrets",
+      "enabled": true,
+      "description": "PEM certificate headers.",
+      "patterns": [
+        {
+          "name": "pem_certificate",
+          "regex": "-----BEGIN CERTIFICATE-----",
+          "score": 0.8
+        }
+      ],
+      "context": [],
+      "tests": {
+        "match": [
+          "-----BEGIN CERTIFICATE-----"
+        ],
+        "no_match": [
+          "-----BEGIN CERTIFICATE REQUEST-----"
+        ]
+      }
+    },
+    {
+      "name": "ConnectionStringRecognizer",
+      "entity": "CONNECTION_STRING",
+      "group": "secrets",
+      "enabled": true,
+      "description": "Database and broker connection strings that embed a password.",
+      "patterns": [
+        {
+          "name": "uri_with_password",
+          "regex": "\\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\\+srv)?|redis|rediss|amqps?|mssql|oracle|jdbc:[a-z]+(?::[a-z]+)?)://[^\\s:/@]+:[^\\s@/]+@[^\\s\\\"']+",
+          "score": 0.95
+        },
+        {
+          "name": "ado_net_password",
+          "regex": "(?i)\\b(?:Server|Data Source)=[^;]+;.*?\\b(?:Password|Pwd)=[^;\\s]+",
+          "score": 0.9
+        }
+      ],
+      "context": [],
+      "tests": {
+        "match": [
+          "DATABASE_URL=postgresql://loan_app:S3cretPass@db.internal:5432/loans",
+          "Server=db1;Database=loans;User Id=app;Password=S3cret;"
+        ],
+        "no_match": [
+          "postgresql://db.internal:5432/loans"
+        ]
+      }
+    },
+    {
+      "name": "ClassificationMarkerRecognizer",
+      "entity": "CLASSIFICATION_MARKER",
+      "group": "classification",
+      "enabled": true,
+      "description": "Document classification markers, a proxy for proprietary or internal documents.",
+      "patterns": [
+        {
+          "name": "classification_marker",
+          "regex": "(?i)\\b(?:strictly confidential|company confidential|internal use only|proprietary and confidential|restricted[ -]+internal)\\b",
+          "score": 0.8
+        }
+      ],
+      "context": [],
+      "tests": {
+        "match": [
+          "STRICTLY CONFIDENTIAL - do not distribute",
+          "Internal Use Only"
+        ],
+        "no_match": [
+          "A confidential interval"
+        ]
+      }
+    }
+  ]
+}

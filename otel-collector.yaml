@@ -1,0 +1,26 @@
+# Local OpenTelemetry Collector: receives governance.decision events and
+# writes them to ./logs/governance-events.jsonl (and the console).
+# To feed a SIEM, add its exporter here (e.g. otlphttp, splunk_hec,
+# elasticsearch, azuremonitor) and list it under service.pipelines.logs.
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  debug:
+    verbosity: basic
+  file:
+    path: /logs/governance-events.jsonl
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug, file]

@@ -1,0 +1,13 @@
+.env
+secrets/
+intune/out/
+logs/*.jsonl
+.governance-sanitized/
+__pycache__/
+detection_api/models/*.whl
+logs/rules-archive/
+*.pyc
+.venv/
+deploy/aws/test-server.env
+governance-test-ca.pem
+logs/*.log

@@ -1,0 +1,111 @@
+{
+  "family": "ai-governance-detection-api",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "networkMode": "awsvpc",
+  "cpu": "2048",
+  "memory": "4096",
+  "runtimePlatform": {
+    "operatingSystemFamily": "LINUX",
+    "cpuArchitecture": "X86_64"
+  },
+  "taskRoleArn": "arn:aws:iam::<account-id>:role/ai-governance-api-task",
+  "executionRoleArn": "arn:aws:iam::<account-id>:role/ai-governance-api-execution",
+  "containerDefinitions": [
+    {
+      "name": "detection-api",
+      "image": "<account-id>.dkr.ecr.<region>.amazonaws.com/ai-governance/detection-api:<version>",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8088,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "GOV_ENVIRONMENT",
+          "value": "production"
+        },
+        {
+          "name": "GOV_AWS_SECRET_ID",
+          "value": "ai-governance/production"
+        },
+        {
+          "name": "GOV_AWS_REGION",
+          "value": "<region>"
+        },
+        {
+          "name": "GOV_AUTH_MODE",
+          "value": "token+oidc"
+        },
+        {
+          "name": "GOV_OIDC_ISSUER",
+          "value": "https://login.microsoftonline.com/<tenant-id>/v2.0"
+        },
+        {
+          "name": "GOV_OIDC_AUDIENCE",
+          "value": "<application-client-id>"
+        },
+        {
+          "name": "GOV_OIDC_JWKS_URL",
+          "value": "https://login.microsoftonline.com/<tenant-id>/discovery/v2.0/keys"
+        },
+        {
+          "name": "GOV_IDENTITY_MISMATCH",
+          "value": "log"
+        },
+        {
+          "name": "GOV_HOST",
+          "value": "0.0.0.0"
+        },
+        {
+          "name": "GOV_WORKERS",
+          "value": "2"
+        },
+        {
+          "name": "GOV_AUDIT_FILE",
+          "value": "/logs/governance-decisions.jsonl"
+        },
+        {
+          "name": "GOV_RULES_ARCHIVE_DIR",
+          "value": "/logs/rules-archive"
+        }
+      ],
+      "mountPoints": [
+        {
+          "sourceVolume": "governance-logs",
+          "containerPath": "/logs"
+        }
+      ],
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "curl -fs http://127.0.0.1:8088/healthz || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 120
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ai-governance/detection-api",
+          "awslogs-region": "<region>",
+          "awslogs-stream-prefix": "api"
+        }
+      }
+    }
+  ],
+  "volumes": [
+    {
+      "name": "governance-logs",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "<efs-id>",
+        "transitEncryption": "ENABLED"
+      }
+    }
+  ]
+}
